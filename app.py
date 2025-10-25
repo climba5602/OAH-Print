@@ -11,26 +11,43 @@ from reportlab.pdfbase.ttfonts import TTFont
 import os
 
 def register_fonts():
-    # Prefer a bundled font in ./fonts/ (add a font file there, e.g. NotoSansTC-Regular.otf)
-    bundled_paths = [
-        os.path.join(os.path.dirname(__file__), "fonts", "NotoSansTC-Regular.otf"),
-        os.path.join(os.path.dirname(__file__), "fonts", "NotoSansTC-Regular.ttf"),
-        os.path.join(os.path.dirname(__file__), "fonts", "msyh.ttc"),  # optionally bundled MSYH
+    """
+    優先使用 repo 根目錄 ./fonts/ 下的字型檔 (例如 NotoSansTC-Regular.otf 或 .ttf)
+    若沒有找到，再嘗試系統字型位置（Streamlit Cloud 通常沒有 Windows 字型）
+    若都沒有，回傳內建字型 'Helvetica'（但不支援中文）
+    回傳值為註冊後在報表裡使用的字型名稱。
+    """
+    base = os.path.dirname(__file__)
+    candidates = [
+        os.path.join(base, "fonts", "NotoSansTC-Regular.otf"),
+        os.path.join(base, "fonts", "NotoSansTC-Regular.ttf"),
+        os.path.join(base, "fonts", "SourceHanSansTC-Regular.otf"),
+        os.path.join(base, "fonts", "msyh.ttc"),
     ]
-    for p in bundled_paths:
-        if os.path.exists(p):
+    for path in candidates:
+        if os.path.exists(path):
             try:
-                pdfmetrics.registerFont(TTFont('APP_FONT', p))
+                # 如果是 .ttc 可能需要 subfontIndex=0
+                if path.lower().endswith('.ttc'):
+                    pdfmetrics.registerFont(TTFont('APP_FONT', path, subfontIndex=0))
+                else:
+                    pdfmetrics.registerFont(TTFont('APP_FONT', path))
                 return 'APP_FONT'
-            except Exception:
-                pass
-    # Try system font paths (best-effort) - Windows example
+            except Exception as e:
+                # 註冊失敗就嘗試下一個候選
+                print(f"Font register error for {path}: {e}")
+                continue
+
+    # 嘗試 Windows 常見字型路徑（Cloud 不會有，但保留作為 fallback）
     try:
-        pdfmetrics.registerFont(TTFont('MSYH', 'C:/Windows/Fonts/msyh.ttc', subfontIndex=0))
-        return 'MSYH'
+        win_path = r"C:\Windows\Fonts\msyh.ttc"
+        if os.path.exists(win_path):
+            pdfmetrics.registerFont(TTFont('MSYH', win_path, subfontIndex=0))
+            return 'MSYH'
     except Exception:
         pass
-    # Fall back to ReportLab's Helvetica
+
+    # 最後退回到 Helvetica（無中文）
     return 'Helvetica'
 
 FONT_NAME = register_fonts()
@@ -75,7 +92,7 @@ def create_pdf(df, selected_districts):
         home_name = Paragraph(str(row.get('Unnamed: 4', '')), body_style)
         home_addr = Paragraph(str(row.get('Unnamed: 6', '')), body_style)
         phone_raw = str(row.get(phone_key, '')) if phone_key else ''
-        phone = '' if phone_raw == 'nan' else phone_raw.split('.')[0] if phone_raw else ''
+        phone = '' if phone_raw == 'nan' else (phone_raw.split('.')[0] if phone_raw else '')
         phone_par = Paragraph(phone, body_style)
         table_data.append([seq, district, home_name, home_addr, phone_par])
 
